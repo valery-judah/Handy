@@ -643,6 +643,10 @@
           "title": "Token",
           "description": "Other computers send this as the API key. Anyone with it can use the server."
         },
+        "microphone": {
+          "label": "Allow Other Computers to Use This Microphone",
+          "description": "Lets a computer that has the token start and stop recording with this computer's microphone, and get the text back. While it records, the overlay and tray here show it. Off unless you turn it on."
+        },
         "ownToken": {
           "title": "Use Your Own Token",
           "description": "Type a token, such as one your other computers already use, and save it. It needs at least 8 characters with no spaces. Your current token stays until you change it here or create a new one.",
@@ -665,6 +669,10 @@
         "token": {
           "title": "Token",
           "description": "The Token shown in the other computer's Transcription Server settings."
+        },
+        "serverMicrophone": {
+          "label": "Use the Server's Microphone",
+          "description": "Records with the server computer's microphone instead of this one. The shortcut here starts and stops the recording there, and the text is pasted here. Turn on \"Allow Other Computers to Use This Microphone\" on the server first. The text comes back when you stop."
         },
         "mode": {
           "title": "Text Delivery",

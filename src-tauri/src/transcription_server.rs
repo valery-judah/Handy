@@ -76,8 +76,8 @@ impl TranscriptionServer {
 }
 
 #[derive(Clone)]
-struct ServerState {
-    app: AppHandle,
+pub(crate) struct ServerState {
+    pub(crate) app: AppHandle,
     /// One transcription at a time: the engine runs one anyway, and this
     /// keeps a second request from holding the model while it waits.
     busy: Arc<tokio::sync::Mutex<()>>,
@@ -112,6 +112,15 @@ pub async fn sync(app: &AppHandle) -> Result<(), String> {
         .route("/health", get(health))
         .route("/v1/models", get(models))
         .route("/v1/audio/transcriptions", post(transcriptions))
+        .route(
+            "/v1/microphone/start",
+            post(crate::server_microphone::start),
+        )
+        .route("/v1/microphone/stop", post(crate::server_microphone::stop))
+        .route(
+            "/v1/microphone/cancel",
+            post(crate::server_microphone::cancel),
+        )
         .layer(DefaultBodyLimit::max(MAX_UPLOAD_BYTES))
         .with_state(state);
 
@@ -286,6 +295,20 @@ fn check_custom_token(token: &str) -> Result<String, String> {
     Ok(token.to_string())
 }
 
+/// Lets clients record with this computer's microphone; see
+/// `server_microphone`.
+#[tauri::command]
+#[specta::specta]
+pub fn change_transcription_server_microphone_setting(
+    app: AppHandle,
+    enabled: bool,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.transcription_server_microphone_enabled = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
 /// Replaces the token. Clients using the old one stop working at once.
 #[tauri::command]
 #[specta::specta]
@@ -301,13 +324,13 @@ pub fn regenerate_transcription_server_token(app: AppHandle) -> Result<(), Strin
 // ---------------------------------------------------------------------------
 
 /// An error in the shape OpenAI clients expect.
-struct ApiError {
+pub(crate) struct ApiError {
     status: StatusCode,
     message: String,
 }
 
 impl ApiError {
-    fn new(status: StatusCode, message: impl Into<String>) -> Self {
+    pub(crate) fn new(status: StatusCode, message: impl Into<String>) -> Self {
         Self {
             status,
             message: message.into(),
@@ -331,7 +354,7 @@ impl IntoResponse for ApiError {
     }
 }
 
-fn check_token(app: &AppHandle, headers: &HeaderMap) -> Result<(), ApiError> {
+pub(crate) fn check_token(app: &AppHandle, headers: &HeaderMap) -> Result<(), ApiError> {
     let expected = settings::get_settings(app).transcription_server_token.0;
     let given = headers
         .get(header::AUTHORIZATION)

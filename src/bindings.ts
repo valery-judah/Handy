@@ -288,6 +288,18 @@ async changeTranscriptionServerTokenSetting(token: string) : Promise<Result<null
 }
 },
 /**
+ * Lets clients record with this computer's microphone; see
+ * `server_microphone`.
+ */
+async changeTranscriptionServerMicrophoneSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_transcription_server_microphone_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Replaces the token. Clients using the old one stop working at once.
  */
 async regenerateTranscriptionServerToken() : Promise<Result<null, string>> {
@@ -325,6 +337,14 @@ async changeRemoteTranscriptionTokenSetting(token: string) : Promise<Result<null
 async changeRemoteTranscriptionModeSetting(mode: RemoteTranscriptionMode) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_remote_transcription_mode_setting", { mode }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeRemoteTranscriptionServerMicrophoneSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_remote_transcription_server_microphone_setting", { enabled }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1283,6 +1303,11 @@ transcription_server_enabled?: boolean; transcription_server_port?: number;
  */
 transcription_server_token?: ServerToken; 
 /**
+ * Lets clients record with this computer's microphone and get the
+ * text back. See `server_microphone`.
+ */
+transcription_server_microphone_enabled?: boolean; 
+/**
  * Send recordings to another Handy's transcription server instead of
  * the local model. See `remote_transcription`.
  */
@@ -1290,7 +1315,11 @@ remote_transcription_enabled?: boolean;
 /**
  * The server's base URL, such as `http://192.168.0.21:8765/v1`.
  */
-remote_transcription_url?: string; remote_transcription_token?: ServerToken; remote_transcription_mode?: RemoteTranscriptionMode }
+remote_transcription_url?: string; remote_transcription_token?: ServerToken; remote_transcription_mode?: RemoteTranscriptionMode; 
+/**
+ * Record with the server's microphone instead of this computer's.
+ */
+remote_transcription_use_server_microphone?: boolean }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AutoUnavailableReason = 

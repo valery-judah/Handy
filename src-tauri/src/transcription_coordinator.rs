@@ -762,9 +762,11 @@ fn start(app: &AppHandle, binding_id: &str, hotkey_string: &str) -> bool {
         return false;
     };
     action.start(app, binding_id, hotkey_string);
+    // Recording with the server's microphone opens none here.
     let recording = app
         .try_state::<Arc<AudioRecordingManager>>()
-        .is_some_and(|a| a.is_recording());
+        .is_some_and(|a| a.is_recording())
+        || crate::remote_microphone::is_active();
     if !recording {
         debug!("Start for '{binding_id}' did not begin recording; staying idle");
     }

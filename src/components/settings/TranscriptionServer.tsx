@@ -27,6 +27,8 @@ export const TranscriptionServer: React.FC<TranscriptionServerProps> = ({
   const enabled = getSetting("transcription_server_enabled") ?? false;
   const port = getSetting("transcription_server_port") ?? 8765;
   const token = getSetting("transcription_server_token") ?? "";
+  const shareMicrophone =
+    getSetting("transcription_server_microphone_enabled") ?? false;
 
   const [status, setStatus] = useState<TranscriptionServerStatus | null>(null);
   const [portText, setPortText] = useState(String(port));
@@ -144,6 +146,19 @@ export const TranscriptionServer: React.FC<TranscriptionServerProps> = ({
             grouped={grouped}
             copyable
             monospace
+          />
+          <ToggleSwitch
+            checked={shareMicrophone}
+            onChange={(value) =>
+              updateSetting("transcription_server_microphone_enabled", value)
+            }
+            isUpdating={isUpdating("transcription_server_microphone_enabled")}
+            label={t("settings.advanced.transcriptionServer.microphone.label")}
+            description={t(
+              "settings.advanced.transcriptionServer.microphone.description",
+            )}
+            descriptionMode={descriptionMode}
+            grouped={grouped}
           />
           <SettingContainer
             title={t("settings.advanced.transcriptionServer.ownToken.title")}

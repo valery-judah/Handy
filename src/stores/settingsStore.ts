@@ -240,6 +240,10 @@ const settingUpdaters: {
   },
   remote_transcription_token: (value) =>
     commands.changeRemoteTranscriptionTokenSetting(value as string),
+  remote_transcription_use_server_microphone: (value) =>
+    commands.changeRemoteTranscriptionServerMicrophoneSetting(value as boolean),
+  transcription_server_microphone_enabled: (value) =>
+    commands.changeTranscriptionServerMicrophoneSetting(value as boolean),
   remote_transcription_mode: (value) =>
     commands.changeRemoteTranscriptionModeSetting(
       value as RemoteTranscriptionMode,

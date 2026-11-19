@@ -516,10 +516,149 @@ pub(crate) async fn process_transcription_output(
     }
 }
 
+/// Starts a dictation that records with the server's microphone: nothing
+/// opens here, so this only shows that it's recording and asks the server.
+fn start_with_server_microphone(app: &AppHandle) {
+    RECORDING_SESSION.fetch_add(1, Ordering::SeqCst);
+    set_tray_state(app, TrayIconState::Recording);
+    if get_settings(app).overlay_style != OverlayStyle::None {
+        show_recording_overlay(app);
+    }
+    crate::remote_microphone::begin(app);
+    shortcut::register_cancel_shortcut(app);
+}
+
+/// Stops a dictation recorded with the server's microphone, and pastes the
+/// text the server sends back.
+fn stop_with_server_microphone(app: &AppHandle, post_process: bool, stop_time: Instant) {
+    set_tray_state(app, TrayIconState::Transcribing);
+    show_transcribing_overlay(app);
+    play_feedback_sound(app, SoundType::Stop);
+
+    let ah = app.clone();
+    let rm = Arc::clone(&app.state::<Arc<AudioRecordingManager>>());
+    let tm = Arc::clone(&app.state::<Arc<TranscriptionManager>>());
+    let cancel_generation = rm.cancel_generation();
+    tauri::async_runtime::spawn(async move {
+        let _guard = FinishGuard(ah.clone(), Arc::clone(&tm));
+        let settings = get_settings(&ah);
+        let Some(result) =
+            complete_unless_cancelled(crate::remote_microphone::finish(&settings), || {
+                rm.was_cancelled_since(cancel_generation)
+            })
+            .await
+        else {
+            debug!("Cancelled while the server transcribed its recording");
+            utils::hide_recording_overlay(&ah);
+            set_tray_state(&ah, TrayIconState::Idle);
+            return;
+        };
+
+        let text = match result {
+            Ok(text) => text,
+            Err(err) => {
+                error!("Dictation with the server's microphone failed: {}", err);
+                notices::raise(
+                    &ah,
+                    Notice::new(NoticeCode::TranscriptionFailed, NoticeSource::Dictation)
+                        .with_detail(err.to_string()),
+                );
+                set_tray_state(&ah, TrayIconState::Idle);
+                emit_transcription_complete(&ah, TranscriptionOutcome::Failed, 0, stop_time);
+                return;
+            }
+        };
+        if text.is_empty() {
+            finish_without_text(&ah, false, 0, stop_time);
+            return;
+        }
+
+        if post_process {
+            show_processing_overlay(&ah);
+        }
+        let Some(processed) = complete_unless_cancelled(
+            process_transcription_output(&ah, &text, post_process),
+            || rm.was_cancelled_since(cancel_generation),
+        )
+        .await
+        else {
+            utils::hide_recording_overlay(&ah);
+            set_tray_state(&ah, TrayIconState::Idle);
+            return;
+        };
+        let Some(final_text) = complete_unless_cancelled(
+            crate::transcription_hook::apply(&ah, processed.final_text),
+            || rm.was_cancelled_since(cancel_generation),
+        )
+        .await
+        else {
+            utils::hide_recording_overlay(&ah);
+            set_tray_state(&ah, TrayIconState::Idle);
+            return;
+        };
+        if final_text.is_empty() {
+            finish_without_text(&ah, false, 0, stop_time);
+            return;
+        }
+
+        let post_process_failed = processed.post_process_failed;
+        let session = RECORDING_SESSION.load(Ordering::SeqCst);
+        // Off the async runtime: paste sleeps between steps.
+        let _ = std::thread::Builder::new()
+            .name("paste".into())
+            .spawn(move || {
+                let owns_ui = || RECORDING_SESSION.load(Ordering::SeqCst) == session;
+                let (outcome, notice) = match utils::paste(final_text, ah.clone()) {
+                    Ok(utils::PasteOutcome::Pasted) => {
+                        if owns_ui() {
+                            notices::clear(&ah, NoticeSource::Dictation);
+                        }
+                        let notice = post_process_failed.then(|| {
+                            Notice::new(NoticeCode::PostProcessFailed, NoticeSource::Dictation)
+                        });
+                        (TranscriptionOutcome::Typed, notice)
+                    }
+                    Ok(utils::PasteOutcome::Blocked) => (
+                        TranscriptionOutcome::Failed,
+                        Some(Notice::new(
+                            NoticeCode::PasteBlockedElevated,
+                            NoticeSource::Dictation,
+                        )),
+                    ),
+                    Err(e) => {
+                        error!("Failed to paste transcription: {}", e);
+                        (
+                            TranscriptionOutcome::Failed,
+                            Some(Notice::new(
+                                NoticeCode::PasteFailed,
+                                NoticeSource::Dictation,
+                            )),
+                        )
+                    }
+                };
+                match (owns_ui(), notice) {
+                    (true, Some(notice)) => notices::raise(&ah, notice),
+                    (true, None) => utils::hide_recording_overlay(&ah),
+                    (false, Some(notice)) => notices::raise_without_overlay(&ah, notice),
+                    (false, None) => {}
+                }
+                if owns_ui() {
+                    set_tray_state(&ah, TrayIconState::Idle);
+                }
+                emit_transcription_complete(&ah, outcome, 0, stop_time);
+            });
+    });
+}
+
 impl ShortcutAction for TranscribeAction {
     fn start(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
         let start_time = Instant::now();
         debug!("TranscribeAction::start called for binding: {}", binding_id);
+
+        if crate::remote_microphone::wanted(&get_settings(app)) {
+            start_with_server_microphone(app);
+            return;
+        }
 
         // Load model in the background
         let tm = app.state::<Arc<TranscriptionManager>>();
@@ -724,6 +863,11 @@ impl ShortcutAction for TranscribeAction {
         let stop_time = Instant::now();
         debug!("TranscribeAction::stop called for binding: {}", binding_id);
 
+        if crate::remote_microphone::is_active() {
+            stop_with_server_microphone(app, self.post_process, stop_time);
+            return;
+        }
+
         let ah = app.clone();
         let rm = Arc::clone(&app.state::<Arc<AudioRecordingManager>>());
         let tm = Arc::clone(&app.state::<Arc<TranscriptionManager>>());
@@ -766,7 +910,10 @@ impl ShortcutAction for TranscribeAction {
             let typing = live
                 .as_ref()
                 .is_some_and(|l| l.mode() == RemoteTranscriptionMode::Type);
-            let post_process = post_process && !typing;
+            // A client's recording with this microphone: its text goes back
+            // to the client, which post-processes and pastes it there.
+            let mut server_take = crate::server_microphone::claim();
+            let post_process = post_process && !typing && server_take.is_none();
             debug!(
                 "Starting async transcription task for binding: {}",
                 binding_id
@@ -960,6 +1107,20 @@ impl ShortcutAction for TranscribeAction {
                                 }
                             }
 
+                            if let Some(take) = server_take.take() {
+                                take.deliver(Ok(processed.final_text));
+                                notices::clear(&ah, NoticeSource::Dictation);
+                                utils::hide_recording_overlay(&ah);
+                                set_tray_state(&ah, TrayIconState::Idle);
+                                emit_transcription_complete(
+                                    &ah,
+                                    TranscriptionOutcome::Typed,
+                                    sample_count,
+                                    stop_time,
+                                );
+                                return;
+                            }
+
                             // The user's hook only changes what gets pasted;
                             // history above keeps the text as produced.
                             let Some(final_text) = complete_unless_cancelled(
@@ -1103,6 +1264,9 @@ impl ShortcutAction for TranscribeAction {
                             }
 
                             error!("Transcription failed: {}", err);
+                            if let Some(take) = server_take.take() {
+                                take.deliver(Err(err.to_string()));
+                            }
                             notices::raise(
                                 &ah,
                                 Notice::new(

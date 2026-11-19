@@ -85,6 +85,30 @@ unreadable audio, unsupported `response_format`) or `server_error` (500, or
   second for Qwen3-ASR 1.7B on the M4 Max). After that, 5 s of speech takes
   about 0.2 s.
 
+### The server's microphone
+
+With "Allow Other Computers to Use This Microphone" on
+(`transcription_server_microphone_enabled`, off by default), a client can
+dictate with the server's microphone (`src-tauri/src/server_microphone.rs`):
+
+| Endpoint                     | Request    | Response                                        |
+| ---------------------------- | ---------- | ----------------------------------------------- |
+| `POST /v1/microphone/start`  | —          | `{"id":1}` once the microphone records          |
+| `POST /v1/microphone/stop`   | `{"id":1}` | `{"text":"..."}`, waiting for the transcription |
+| `POST /v1/microphone/cancel` | `{"id":1}` | `{}`                                            |
+
+- Start and stop toggle the server's own dictation, the way
+  `--toggle-transcription` does, so the server shows its overlay, plays its
+  sounds and saves the recording to its history. Only the paste is skipped:
+  the stop path in `actions.rs` gives the text to the waiting request
+  (`server_microphone::claim`).
+- `403` with sharing off, `409` while the server's microphone is in use
+  (another client, or a dictation there), `404` for an unknown id.
+- A recording nobody stops is cancelled after 10 minutes. A cancel on the
+  server ends the client's recording, and its stop gets empty text.
+- The server's text cleanup runs, but its post-processing and hook don't;
+  the client runs its own.
+
 ## Client behavior
 
 With Remote Transcription on and a URL set:
@@ -109,6 +133,14 @@ With Remote Transcription on and a URL set:
     auto-submit; the last phrase is pasted at the stop with them.
     Post-processing is skipped, because the text is already typed. History
     keeps the whole text and recording.
+- **Use the Server's Microphone** (`remote_transcription_use_server_microphone`,
+  `src-tauri/src/remote_microphone.rs`): the shortcut starts and stops the
+  recording on the server; this computer's microphone stays closed. The
+  text is post-processed, run through the hook and pasted here. Text
+  Delivery is hidden, since the text only comes back at the stop. Windows
+  history doesn't get an entry, because the audio stays on the server.
+  An older server answers the new endpoints with an empty `404`, shown as
+  "too old to share its microphone".
 - **Phrases** (`src-tauri/src/remote_live.rs`): the recorder's frames reach
   the phrase sender through a tap on `StreamRouter`. With VAD on, frames
   stop shortly after speech ends, so a 300 ms gap in frames is a pause (about

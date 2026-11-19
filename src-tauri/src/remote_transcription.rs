@@ -190,8 +190,113 @@ pub async fn transcribe(settings: &AppSettings, samples: &[f32]) -> Result<Strin
 }
 
 // ---------------------------------------------------------------------------
+// The server's microphone
+// ---------------------------------------------------------------------------
+
+/// How long a stop waits for the server's text: its recording, as long as
+/// ten minutes, still has to be transcribed.
+const MICROPHONE_STOP_TIMEOUT: Duration = Duration::from_secs(200);
+
+#[derive(Deserialize)]
+struct MicrophoneStarted {
+    id: u64,
+}
+
+/// Posts `body` to `<base>/microphone/<action>` and returns the answer's body.
+async fn microphone_request(
+    settings: &AppSettings,
+    action: &str,
+    body: serde_json::Value,
+    timeout: Duration,
+) -> Result<String> {
+    if points_at_own_server(settings) {
+        return Err(anyhow!(
+            "Remote transcription points at this computer's own transcription server. Enter the other computer's address."
+        ));
+    }
+    let base = api_base(&settings.remote_transcription_url);
+    let response = CLIENT
+        .post(format!("{base}/microphone/{action}"))
+        .bearer_auth(&settings.remote_transcription_token.0)
+        .timeout(timeout)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| send_error(&base, e))?;
+    let status = response.status();
+    let text = response.text().await.map_err(|e| send_error(&base, e))?;
+    if status == reqwest::StatusCode::NOT_FOUND && text.trim().is_empty() {
+        return Err(anyhow!(
+            "The Handy server at {base} is too old to share its microphone. Update Handy there."
+        ));
+    }
+    if !status.is_success() {
+        return Err(anyhow!(error_message(status, &text)));
+    }
+    Ok(text)
+}
+
+/// Asks the server to start recording with its microphone. Returns the
+/// recording's id, for [`stop_server_microphone`].
+pub async fn start_server_microphone(settings: &AppSettings) -> Result<u64> {
+    let body = microphone_request(
+        settings,
+        "start",
+        serde_json::json!({}),
+        Duration::from_secs(15),
+    )
+    .await?;
+    let started: MicrophoneStarted = serde_json::from_str(&body)
+        .map_err(|e| anyhow!("The Handy server sent an answer Handy can't read: {e}"))?;
+    Ok(started.id)
+}
+
+/// Stops the server's recording and returns its text.
+pub async fn stop_server_microphone(settings: &AppSettings, id: u64) -> Result<String> {
+    let started = std::time::Instant::now();
+    let body = microphone_request(
+        settings,
+        "stop",
+        serde_json::json!({ "id": id }),
+        MICROPHONE_STOP_TIMEOUT,
+    )
+    .await?;
+    let parsed: TranscriptionResponse = serde_json::from_str(&body)
+        .map_err(|e| anyhow!("The Handy server sent an answer Handy can't read: {e}"))?;
+    info!(
+        "The server's microphone recording came back in {:.2}s",
+        started.elapsed().as_secs_f64()
+    );
+    Ok(parsed.text.trim().to_string())
+}
+
+/// Stops the server's recording and throws it away.
+pub async fn cancel_server_microphone(settings: &AppSettings, id: u64) -> Result<()> {
+    microphone_request(
+        settings,
+        "cancel",
+        serde_json::json!({ "id": id }),
+        Duration::from_secs(10),
+    )
+    .await
+    .map(|_| ())
+}
+
+// ---------------------------------------------------------------------------
 // Commands
 // ---------------------------------------------------------------------------
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_remote_transcription_server_microphone_setting(
+    app: AppHandle,
+    enabled: bool,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.remote_transcription_use_server_microphone = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
 
 #[tauri::command]
 #[specta::specta]
@@ -359,6 +464,27 @@ mod tests {
         let text = transcribe(&settings, &[0.1; 16_000]).await.unwrap();
         // 44-byte header plus 2 bytes per sample.
         assert_eq!(text, "Bearer secret 32044");
+    }
+
+    /// Starts and stops a recording with a real server's microphone. Needs
+    /// `HANDY_TEST_SERVER_URL` and `HANDY_TEST_SERVER_TOKEN`, and the server
+    /// sharing its microphone. Run with `--ignored`.
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore]
+    async fn server_microphone_with_a_real_server() {
+        let mut settings = settings::get_default_settings();
+        settings.remote_transcription_enabled = true;
+        settings.remote_transcription_url = std::env::var("HANDY_TEST_SERVER_URL").unwrap();
+        settings.remote_transcription_token =
+            ServerToken(std::env::var("HANDY_TEST_SERVER_TOKEN").unwrap());
+        let id = start_server_microphone(&settings).await.unwrap();
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let text = stop_server_microphone(&settings, id).await.unwrap();
+        println!("text: {text:?}");
+        let id = start_server_microphone(&settings).await.unwrap();
+        cancel_server_microphone(&settings, id).await.unwrap();
+        let err = stop_server_microphone(&settings, id).await.unwrap_err();
+        println!("stop after cancel: {err}");
     }
 
     /// Against a real server: `HANDY_TEST_SERVER_URL`, `HANDY_TEST_SERVER_TOKEN`

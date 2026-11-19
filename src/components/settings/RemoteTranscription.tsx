@@ -31,6 +31,8 @@ export const RemoteTranscription: React.FC<RemoteTranscriptionProps> = ({
   const enabled = getSetting("remote_transcription_enabled") ?? false;
   const url = getSetting("remote_transcription_url") ?? "";
   const token = getSetting("remote_transcription_token") ?? "";
+  const useServerMicrophone =
+    getSetting("remote_transcription_use_server_microphone") ?? false;
   const mode = (getSetting("remote_transcription_mode") ??
     "whole") as RemoteTranscriptionMode;
 
@@ -152,26 +154,45 @@ export const RemoteTranscription: React.FC<RemoteTranscriptionProps> = ({
               autoComplete="off"
             />
           </SettingContainer>
-          <SettingContainer
-            title={t("settings.advanced.remoteTranscription.mode.title")}
+          <ToggleSwitch
+            checked={useServerMicrophone}
+            onChange={(value) =>
+              updateSetting("remote_transcription_use_server_microphone", value)
+            }
+            isUpdating={isUpdating(
+              "remote_transcription_use_server_microphone",
+            )}
+            label={t(
+              "settings.advanced.remoteTranscription.serverMicrophone.label",
+            )}
             description={t(
-              "settings.advanced.remoteTranscription.mode.description",
+              "settings.advanced.remoteTranscription.serverMicrophone.description",
             )}
             descriptionMode={descriptionMode}
             grouped={grouped}
-          >
-            <Dropdown
-              options={modeOptions}
-              selectedValue={mode}
-              onSelect={(value) =>
-                updateSetting(
-                  "remote_transcription_mode",
-                  value as RemoteTranscriptionMode,
-                )
-              }
-              disabled={isUpdating("remote_transcription_mode")}
-            />
-          </SettingContainer>
+          />
+          {!useServerMicrophone && (
+            <SettingContainer
+              title={t("settings.advanced.remoteTranscription.mode.title")}
+              description={t(
+                "settings.advanced.remoteTranscription.mode.description",
+              )}
+              descriptionMode={descriptionMode}
+              grouped={grouped}
+            >
+              <Dropdown
+                options={modeOptions}
+                selectedValue={mode}
+                onSelect={(value) =>
+                  updateSetting(
+                    "remote_transcription_mode",
+                    value as RemoteTranscriptionMode,
+                  )
+                }
+                disabled={isUpdating("remote_transcription_mode")}
+              />
+            </SettingContainer>
+          )}
           <SettingContainer
             title={t("settings.advanced.remoteTranscription.test.title")}
             description={t(
