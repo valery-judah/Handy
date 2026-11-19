@@ -27,6 +27,7 @@ import { AirPodsMode } from "../AirPodsMode";
 import { FillerWordRemoval } from "../FillerWordRemoval";
 import { VadBackendSelector } from "../VadBackendSelector";
 import { TranscriptionServer } from "../TranscriptionServer";
+import { RemoteTranscription } from "../RemoteTranscription";
 
 export const AdvancedSettings: React.FC = () => {
   const { t } = useTranslation();
@@ -69,6 +70,10 @@ export const AdvancedSettings: React.FC = () => {
 
       <SettingsGroup title={t("settings.advanced.groups.server")}>
         <TranscriptionServer descriptionMode="tooltip" grouped={true} />
+      </SettingsGroup>
+
+      <SettingsGroup title={t("settings.advanced.groups.remote")}>
+        <RemoteTranscription descriptionMode="tooltip" grouped={true} />
       </SettingsGroup>
 
       {experimentalEnabled && (

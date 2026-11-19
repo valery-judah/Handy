@@ -472,7 +472,8 @@
         "transcription": "轉錄",
         "history": "歷史",
         "experimental": "實驗性",
-        "server": "Transcription Server"
+        "server": "Transcription Server",
+        "remote": "Remote Transcription"
       },
       "experimentalToggle": {
         "label": "實驗性功能",
@@ -648,6 +649,25 @@
           "button": "Create New Token"
         },
         "notRunning": "Not running"
+      },
+      "remoteTranscription": {
+        "label": "Remote Transcription",
+        "description": "Sends each recording to another computer running Handy's transcription server and pastes the text it returns. The local model isn't used while this is on.",
+        "url": {
+          "title": "Server URL",
+          "description": "The Server URL shown in the other computer's Transcription Server settings."
+        },
+        "token": {
+          "title": "Token",
+          "description": "The Token shown in the other computer's Transcription Server settings."
+        },
+        "test": {
+          "title": "Test Connection",
+          "description": "Checks that Handy can reach the server with this URL and token.",
+          "button": "Test Connection",
+          "testing": "Testing…",
+          "connected": "Connected. Server model: {{model}}"
+        }
       }
     },
     "postProcessing": {

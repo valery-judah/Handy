@@ -227,6 +227,19 @@ const settingUpdaters: {
       throw new Error(result.error);
     }
   },
+  remote_transcription_enabled: (value) =>
+    commands.changeRemoteTranscriptionEnabledSetting(value as boolean),
+  remote_transcription_url: async (value) => {
+    const result = await commands.changeRemoteTranscriptionUrlSetting(
+      value as string,
+    );
+    if (result.status === "error") {
+      notify({ title: result.error });
+      throw new Error(result.error);
+    }
+  },
+  remote_transcription_token: (value) =>
+    commands.changeRemoteTranscriptionTokenSetting(value as string),
   transcription_server_port: async (value) => {
     const result = await commands.changeTranscriptionServerPortSetting(
       value as number,

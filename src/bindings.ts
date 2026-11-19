@@ -286,6 +286,42 @@ async regenerateTranscriptionServerToken() : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+async changeRemoteTranscriptionEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_remote_transcription_enabled_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeRemoteTranscriptionUrlSetting(url: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_remote_transcription_url_setting", { url }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeRemoteTranscriptionTokenSetting(token: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_remote_transcription_token_setting", { token }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Checks the URL and token by asking the server for its model. Returns the
+ * model's id.
+ */
+async testRemoteTranscription() : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("test_remote_transcription") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changePostProcessBaseUrlSetting(providerId: string, baseUrl: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_post_process_base_url_setting", { providerId, baseUrl }) };
@@ -1225,7 +1261,16 @@ transcription_server_enabled?: boolean; transcription_server_port?: number;
  * Clients send it as `Authorization: Bearer <token>`. Created when the
  * server is first turned on.
  */
-transcription_server_token?: ServerToken }
+transcription_server_token?: ServerToken; 
+/**
+ * Send recordings to another Handy's transcription server instead of
+ * the local model. See `remote_transcription`.
+ */
+remote_transcription_enabled?: boolean; 
+/**
+ * The server's base URL, such as `http://192.168.0.21:8765/v1`.
+ */
+remote_transcription_url?: string; remote_transcription_token?: ServerToken }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AutoUnavailableReason = 

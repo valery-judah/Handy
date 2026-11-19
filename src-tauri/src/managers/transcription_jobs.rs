@@ -315,8 +315,25 @@ impl TranscriptionJobManager {
             cancelled,
             percent: Cell::new(0),
         };
-        let Some(Transcription { text, language }) = tm.transcribe_in_chunks(samples, &control)?
-        else {
+        let settings = crate::settings::get_settings(&self.app);
+        let transcription = if crate::remote_transcription::enabled(&settings) {
+            // One request for the whole recording, after any dictation here.
+            if !control.proceed() {
+                return Ok(JobEnd::Cancelled);
+            }
+            control.progress(0, samples.len());
+            let text = tauri::async_runtime::block_on(crate::remote_transcription::transcribe(
+                &settings, &samples,
+            ))?;
+            control.progress(samples.len(), samples.len());
+            Some(Transcription {
+                text,
+                language: None,
+            })
+        } else {
+            tm.transcribe_in_chunks(samples, &control)?
+        };
+        let Some(Transcription { text, language }) = transcription else {
             return Ok(JobEnd::Cancelled);
         };
         if text.is_empty() {

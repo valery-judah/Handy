@@ -166,7 +166,7 @@ fn new_token() -> Result<ServerToken, String> {
 
 /// This machine's address on the local network: the one it would send from
 /// to reach the internet. Connecting a UDP socket sends nothing.
-fn local_ip() -> Option<Ipv4Addr> {
+pub(crate) fn local_ip() -> Option<Ipv4Addr> {
     let socket = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).ok()?;
     socket.connect((Ipv4Addr::new(192, 0, 2, 1), 9)).ok()?;
     match socket.local_addr().ok()?.ip() {

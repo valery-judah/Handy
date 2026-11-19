@@ -598,6 +598,15 @@ pub struct AppSettings {
     /// server is first turned on.
     #[serde(default)]
     pub transcription_server_token: ServerToken,
+    /// Send recordings to another Handy's transcription server instead of
+    /// the local model. See `remote_transcription`.
+    #[serde(default)]
+    pub remote_transcription_enabled: bool,
+    /// The server's base URL, such as `http://192.168.0.21:8765/v1`.
+    #[serde(default)]
+    pub remote_transcription_url: String,
+    #[serde(default)]
+    pub remote_transcription_token: ServerToken,
 }
 
 fn default_transcription_server_port() -> u16 {
@@ -1106,6 +1115,9 @@ pub fn get_default_settings() -> AppSettings {
         transcription_server_enabled: false,
         transcription_server_port: default_transcription_server_port(),
         transcription_server_token: ServerToken::default(),
+        remote_transcription_enabled: false,
+        remote_transcription_url: String::new(),
+        remote_transcription_token: ServerToken::default(),
         language_detection: LanguageDetectionMode::default(),
         language_detection_window_secs: default_language_detection_window_secs(),
         overlay_style: default_overlay_style(),
