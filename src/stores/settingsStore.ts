@@ -217,6 +217,25 @@ const settingUpdaters: {
     commands.changeLanguageDetectionSetting(value as LanguageDetectionMode),
   language_detection_window_secs: (value) =>
     commands.changeLanguageDetectionWindowSetting(value as number),
+  transcription_server_enabled: async (value) => {
+    const result = await commands.changeTranscriptionServerEnabledSetting(
+      value as boolean,
+    );
+    if (result.status === "error") {
+      // For example, the port is in use. The toggle rolls back via the throw.
+      notify({ title: result.error });
+      throw new Error(result.error);
+    }
+  },
+  transcription_server_port: async (value) => {
+    const result = await commands.changeTranscriptionServerPortSetting(
+      value as number,
+    );
+    if (result.status === "error") {
+      notify({ title: result.error });
+      throw new Error(result.error);
+    }
+  },
 };
 
 export const useSettingsStore = create<SettingsStore>()(

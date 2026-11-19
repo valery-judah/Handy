@@ -389,6 +389,22 @@ impl std::ops::DerefMut for SecretMap {
     }
 }
 
+/// The transcription server's access token. Kept out of `Debug` output so it
+/// never reaches the logs.
+#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize, Type)]
+#[serde(transparent)]
+pub struct ServerToken(pub String);
+
+impl fmt::Debug for ServerToken {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(if self.0.is_empty() {
+            "\"\""
+        } else {
+            "[REDACTED]"
+        })
+    }
+}
+
 /* still handy for composing the initial JSON in the store ------------- */
 /// The container-level `serde(default)` (backed by the `Default` impl below)
 /// guarantees every field — including ones added in the future — falls back to
@@ -572,6 +588,20 @@ pub struct AppSettings {
     /// `overlay_position` (position `none` → style `None`).
     #[serde(default = "default_overlay_style")]
     pub overlay_style: OverlayStyle,
+    /// Run the transcription server, so other devices on the network can send
+    /// audio to this Handy and get text back. See `transcription_server`.
+    #[serde(default)]
+    pub transcription_server_enabled: bool,
+    #[serde(default = "default_transcription_server_port")]
+    pub transcription_server_port: u16,
+    /// Clients send it as `Authorization: Bearer <token>`. Created when the
+    /// server is first turned on.
+    #[serde(default)]
+    pub transcription_server_token: ServerToken,
+}
+
+fn default_transcription_server_port() -> u16 {
+    8765
 }
 
 fn default_model() -> String {
@@ -1073,6 +1103,9 @@ pub fn get_default_settings() -> AppSettings {
         vad_enabled: default_vad_enabled(),
         vad_backend: VadBackend::default(),
         long_form_chunking: default_long_form_chunking(),
+        transcription_server_enabled: false,
+        transcription_server_port: default_transcription_server_port(),
+        transcription_server_token: ServerToken::default(),
         language_detection: LanguageDetectionMode::default(),
         language_detection_window_secs: default_language_detection_window_secs(),
         overlay_style: default_overlay_style(),

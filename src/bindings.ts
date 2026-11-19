@@ -256,6 +256,36 @@ async changeExperimentalEnabledSetting(enabled: boolean) : Promise<Result<null, 
     else return { status: "error", error: e  as any };
 }
 },
+async getTranscriptionServerStatus() : Promise<TranscriptionServerStatus> {
+    return await TAURI_INVOKE("get_transcription_server_status");
+},
+async changeTranscriptionServerEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_transcription_server_enabled_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeTranscriptionServerPortSetting(port: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_transcription_server_port_setting", { port }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Replaces the token. Clients using the old one stop working at once.
+ */
+async regenerateTranscriptionServerToken() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("regenerate_transcription_server_token") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changePostProcessBaseUrlSetting(providerId: string, baseUrl: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_post_process_base_url_setting", { providerId, baseUrl }) };
@@ -1185,7 +1215,17 @@ language_detection_window_secs?: number;
  * not gated on this — that follows model capability. Migrated from the old
  * `overlay_position` (position `none` → style `None`).
  */
-overlay_style?: OverlayStyle }
+overlay_style?: OverlayStyle; 
+/**
+ * Run the transcription server, so other devices on the network can send
+ * audio to this Handy and get text back. See `transcription_server`.
+ */
+transcription_server_enabled?: boolean; transcription_server_port?: number; 
+/**
+ * Clients send it as `Authorization: Bearer <token>`. Created when the
+ * server is first turned on.
+ */
+transcription_server_token?: ServerToken }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AutoUnavailableReason = 
@@ -1467,6 +1507,11 @@ uncovered_bindings: string[];
  */
 recorder_blocked: boolean }
 /**
+ * The transcription server's access token. Kept out of `Debug` output so it
+ * never reaches the logs.
+ */
+export type ServerToken = string
+/**
  * How the transcribe shortcut's key events drive a recording.
  */
 export type ShortcutActivation = 
@@ -1565,6 +1610,11 @@ export type TranscriptionOutcome =
  * Transcribing or pasting failed.
  */
 "failed"
+export type TranscriptionServerStatus = { running: boolean; 
+/**
+ * The base URL clients use, such as `http://192.168.1.20:8765/v1`.
+ */
+url: string | null }
 export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool"
 export type VadBackend = "silero" | "earshot"
 export type WindowsMicrophonePermissionStatus = { supported: boolean; overall_access: PermissionAccess; device_access: PermissionAccess; app_access: PermissionAccess; desktop_app_access: PermissionAccess }

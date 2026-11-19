@@ -30,6 +30,7 @@ mod signal_handle;
 mod system_languages;
 mod transcription_coordinator;
 mod transcription_hook;
+mod transcription_server;
 mod tray;
 mod tray_i18n;
 mod utils;
@@ -227,6 +228,7 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(history_manager.clone());
     app_handle.manage(tray::TrayState::new());
     app_handle.manage(TranscriptionJobManager::new(app_handle));
+    transcription_server::start_at_launch(app_handle);
 
     // Note: Shortcuts are NOT initialized here.
     // The frontend is responsible for calling the `initialize_shortcuts` command
@@ -720,6 +722,10 @@ pub fn run(cli_args: CliArgs) {
             shortcut::change_auto_submit_key_setting,
             shortcut::change_post_process_enabled_setting,
             shortcut::change_experimental_enabled_setting,
+            transcription_server::get_transcription_server_status,
+            transcription_server::change_transcription_server_enabled_setting,
+            transcription_server::change_transcription_server_port_setting,
+            transcription_server::regenerate_transcription_server_token,
             shortcut::change_post_process_base_url_setting,
             shortcut::change_post_process_api_format_setting,
             shortcut::change_post_process_api_key_setting,

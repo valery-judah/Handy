@@ -471,7 +471,8 @@
         "output": "Uitvoer",
         "transcription": "Transcriptie",
         "history": "Geschiedenis",
-        "experimental": "Experimenteel"
+        "experimental": "Experimenteel",
+        "server": "Transcription Server"
       },
       "experimentalToggle": {
         "label": "Experimentele functies",
@@ -625,6 +626,28 @@
           "traditionalTw": "Traditioneel (Taiwan)",
           "traditionalHk": "Traditioneel (Hongkong)"
         }
+      },
+      "transcriptionServer": {
+        "label": "Transcription Server",
+        "description": "Lets other computers on your network send audio to Handy and get the text back, using this computer's model and GPU. It uses the same API as OpenAI's speech-to-text service.",
+        "port": {
+          "title": "Port",
+          "description": "The network port the server listens on. Other computers connect to it."
+        },
+        "url": {
+          "title": "Server URL",
+          "description": "The address to enter in the other computer's app, as the base URL of an OpenAI-compatible service."
+        },
+        "token": {
+          "title": "Token",
+          "description": "Other computers send this as the API key. Anyone with it can use the server."
+        },
+        "regenerate": {
+          "title": "New Token",
+          "description": "Replaces the token. Computers using the old one stop working until you give them the new one.",
+          "button": "Create New Token"
+        },
+        "notRunning": "Not running"
       }
     },
     "postProcessing": {

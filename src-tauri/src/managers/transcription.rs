@@ -27,7 +27,7 @@ use policy::{batch_decode, live_decode, BatchDecode, ModelTraits};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, Condvar, Mutex, MutexGuard};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
@@ -241,6 +241,18 @@ impl Drop for StreamWorkerGuard {
     }
 }
 
+/// Keeps the model held while a transcription server request runs; see
+/// [`TranscriptionManager::hold_for_server_request`].
+pub struct ServerRequestHold {
+    server_requests: Arc<AtomicUsize>,
+}
+
+impl Drop for ServerRequestHold {
+    fn drop(&mut self) {
+        self.server_requests.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
 #[derive(Clone)]
 pub struct TranscriptionManager {
     /// The transcribe-cpp engine: owns the worker process, its model, and
@@ -275,6 +287,9 @@ pub struct TranscriptionManager {
     /// True while a background job is queued or running. It holds the model,
     /// so one transcript is never written by two models.
     job_active: Arc<AtomicBool>,
+    /// Transcription server requests under way. Each holds the model like a
+    /// background job does.
+    server_requests: Arc<AtomicUsize>,
     /// Handy's spoken-language detector, loaded in this process on first
     /// use and unloaded with the model.
     language_detector: Arc<LanguageDetector>,
@@ -298,6 +313,7 @@ impl TranscriptionManager {
             next_stream_worker_id: Arc::new(AtomicU64::new(1)),
             active_stream_worker: Arc::new(AtomicU64::new(0)),
             job_active: Arc::new(AtomicBool::new(false)),
+            server_requests: Arc::new(AtomicUsize::new(0)),
             language_detector: Arc::new(LanguageDetector::default()),
         };
 
@@ -778,9 +794,19 @@ impl TranscriptionManager {
         self.engine.loaded().map(|info| info.backend)
     }
 
-    /// Whether a file job is queued or running, which holds the model.
+    /// Whether a file job is queued or running, or a transcription server
+    /// request is under way. Either holds the model.
     pub fn job_active(&self) -> bool {
-        self.job_active.load(Ordering::Acquire)
+        self.job_active.load(Ordering::Acquire) || self.server_requests.load(Ordering::Acquire) > 0
+    }
+
+    /// Holds the model for one transcription server request, until the
+    /// returned guard is dropped.
+    pub fn hold_for_server_request(&self) -> ServerRequestHold {
+        self.server_requests.fetch_add(1, Ordering::AcqRel);
+        ServerRequestHold {
+            server_requests: Arc::clone(&self.server_requests),
+        }
     }
 
     pub fn set_job_active(&self, active: bool) {
