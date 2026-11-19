@@ -1,0 +1,41 @@
+name: "Fork Build"
+
+# Unsigned builds for this fork, which has no signing keys. The config in
+# src-tauri/tauri.unsigned.conf.json turns off Windows code signing and the
+# updater signature, and points the updater at this fork's releases so the
+# app never offers to replace itself with an upstream release.
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "feat/transcription-server"
+
+concurrency:
+  group: fork-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: github.repository != 'cjpais/Handy'
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: "macos-26" # Apple Silicon. macOS 26 for the Apple Intelligence SDK.
+            args: "--target aarch64-apple-darwin --config src-tauri/tauri.unsigned.conf.json"
+            target: "aarch64-apple-darwin"
+          - platform: "windows-latest"
+            args: "--config src-tauri/tauri.unsigned.conf.json"
+            target: "x86_64-pc-windows-msvc"
+
+    uses: ./.github/workflows/build.yml
+    with:
+      platform: ${{ matrix.platform }}
+      target: ${{ matrix.target }}
+      build-args: ${{ matrix.args }}
+      sign-binaries: false
+      asset-prefix: "handy-fork"
+      upload-artifacts: true
+    secrets: inherit
