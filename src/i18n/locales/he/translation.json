@@ -643,6 +643,11 @@
           "title": "Token",
           "description": "Other computers send this as the API key. Anyone with it can use the server."
         },
+        "ownToken": {
+          "title": "Use Your Own Token",
+          "description": "Type a token, such as one your other computers already use, and save it. It needs at least 8 characters with no spaces. Your current token stays until you change it here or create a new one.",
+          "button": "Save Token"
+        },
         "regenerate": {
           "title": "New Token",
           "description": "Replaces the token. Computers using the old one stop working until you give them the new one.",
@@ -660,6 +665,15 @@
         "token": {
           "title": "Token",
           "description": "The Token shown in the other computer's Transcription Server settings."
+        },
+        "mode": {
+          "title": "Text Delivery",
+          "description": "Whole Recording sends the recording when you stop and pastes its text. Live Preview sends each phrase at a pause and shows its text in the overlay, then sends the whole recording again when you stop and pastes that text. Type As You Speak types each phrase into the app as soon as its text comes back; post-processing is skipped.",
+          "options": {
+            "whole": "Whole Recording",
+            "preview": "Live Preview",
+            "type": "Type As You Speak"
+          }
         },
         "test": {
           "title": "Test Connection",

@@ -30,6 +30,8 @@ export const TranscriptionServer: React.FC<TranscriptionServerProps> = ({
 
   const [status, setStatus] = useState<TranscriptionServerStatus | null>(null);
   const [portText, setPortText] = useState(String(port));
+  const [ownToken, setOwnToken] = useState("");
+  const [savingToken, setSavingToken] = useState(false);
 
   useEffect(() => {
     setPortText(String(port));
@@ -66,6 +68,19 @@ export const TranscriptionServer: React.FC<TranscriptionServerProps> = ({
     if (result.status === "error") {
       notify({ title: result.error });
     }
+    await refreshSettings();
+  };
+
+  const saveOwnToken = async () => {
+    setSavingToken(true);
+    const result =
+      await commands.changeTranscriptionServerTokenSetting(ownToken);
+    setSavingToken(false);
+    if (result.status === "error") {
+      notify({ title: result.error });
+      return;
+    }
+    setOwnToken("");
     await refreshSettings();
   };
 
@@ -130,6 +145,39 @@ export const TranscriptionServer: React.FC<TranscriptionServerProps> = ({
             copyable
             monospace
           />
+          <SettingContainer
+            title={t("settings.advanced.transcriptionServer.ownToken.title")}
+            description={t(
+              "settings.advanced.transcriptionServer.ownToken.description",
+            )}
+            descriptionMode={descriptionMode}
+            grouped={grouped}
+            layout="stacked"
+          >
+            <div className="flex items-center gap-2">
+              <Input
+                type="password"
+                value={ownToken}
+                onChange={(event) => setOwnToken(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && ownToken.trim()) {
+                    void saveOwnToken();
+                  }
+                }}
+                variant="compact"
+                className="flex-1 min-w-0 font-mono"
+                autoComplete="off"
+              />
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => void saveOwnToken()}
+                disabled={savingToken || !ownToken.trim()}
+              >
+                {t("settings.advanced.transcriptionServer.ownToken.button")}
+              </Button>
+            </div>
+          </SettingContainer>
           <SettingContainer
             title={t("settings.advanced.transcriptionServer.regenerate.title")}
             description={t(

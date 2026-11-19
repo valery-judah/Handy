@@ -11,7 +11,7 @@ import type {
   VadBackend,
   LanguageDetectionMode,
 } from "@/bindings";
-import { commands } from "@/bindings";
+import { commands, type RemoteTranscriptionMode } from "@/bindings";
 import { notify } from "@/stores/noticeStore";
 
 interface SettingsStore {
@@ -240,6 +240,10 @@ const settingUpdaters: {
   },
   remote_transcription_token: (value) =>
     commands.changeRemoteTranscriptionTokenSetting(value as string),
+  remote_transcription_mode: (value) =>
+    commands.changeRemoteTranscriptionModeSetting(
+      value as RemoteTranscriptionMode,
+    ),
   transcription_server_port: async (value) => {
     const result = await commands.changeTranscriptionServerPortSetting(
       value as number,

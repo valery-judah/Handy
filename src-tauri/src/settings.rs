@@ -145,6 +145,22 @@ pub enum OverlayStyle {
     Live,
 }
 
+/// How a dictation sent to another Handy's server comes back.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum RemoteTranscriptionMode {
+    /// The whole recording is sent when it stops, and its text is pasted.
+    #[default]
+    Whole,
+    /// Each phrase is sent at a pause and its text shown in the overlay;
+    /// when the recording stops, the whole recording is sent again and that
+    /// text is pasted.
+    Preview,
+    /// Each phrase is sent at a pause and its text typed into the app as
+    /// soon as it comes back.
+    Type,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ModelUnloadTimeout {
@@ -607,6 +623,8 @@ pub struct AppSettings {
     pub remote_transcription_url: String,
     #[serde(default)]
     pub remote_transcription_token: ServerToken,
+    #[serde(default)]
+    pub remote_transcription_mode: RemoteTranscriptionMode,
 }
 
 fn default_transcription_server_port() -> u16 {
@@ -1118,6 +1136,7 @@ pub fn get_default_settings() -> AppSettings {
         remote_transcription_enabled: false,
         remote_transcription_url: String::new(),
         remote_transcription_token: ServerToken::default(),
+        remote_transcription_mode: RemoteTranscriptionMode::default(),
         language_detection: LanguageDetectionMode::default(),
         language_detection_window_secs: default_language_detection_window_secs(),
         overlay_style: default_overlay_style(),

@@ -19,7 +19,7 @@ use reqwest::multipart::{Form, Part};
 use serde::Deserialize;
 use tauri::AppHandle;
 
-use crate::settings::{self, AppSettings, ServerToken};
+use crate::settings::{self, AppSettings, RemoteTranscriptionMode, ServerToken};
 
 /// How long to wait for the server to accept a connection.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -230,6 +230,18 @@ pub fn change_remote_transcription_token_setting(
 ) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.remote_transcription_token = ServerToken(token.trim().to_string());
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_remote_transcription_mode_setting(
+    app: AppHandle,
+    mode: RemoteTranscriptionMode,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.remote_transcription_mode = mode;
     settings::write_settings(&app, settings);
     Ok(())
 }

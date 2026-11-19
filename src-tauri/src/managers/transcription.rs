@@ -131,7 +131,14 @@ pub struct StreamRouter {
     /// True while a stream is pending or active (channel is open). The audio
     /// callback checks this first to avoid the mutex lock when no stream runs.
     open: Arc<AtomicBool>,
+    /// Also receives every frame while set: a live remote dictation (see
+    /// `remote_live`), which sends phrases to a server instead of a stream.
+    tap: Mutex<Option<FrameTap>>,
+    tap_open: AtomicBool,
 }
+
+/// Receives a copy of each recorded frame.
+pub type FrameTap = Box<dyn Fn(&[f32]) + Send + Sync>;
 
 /// One streaming worker's command channel.
 struct Route {
@@ -146,6 +153,8 @@ impl StreamRouter {
         Self {
             route: Mutex::new(None),
             open: Arc::new(AtomicBool::new(false)),
+            tap: Mutex::new(None),
+            tap_open: AtomicBool::new(false),
         }
     }
 
@@ -180,12 +189,24 @@ impl StreamRouter {
     /// Forward a 16 kHz frame to the active streaming worker. Cheap no-op (a
     /// single relaxed atomic load) when no stream is pending.
     pub fn feed(&self, frame: &[f32]) {
+        if self.tap_open.load(Ordering::Relaxed) {
+            if let Some(tap) = self.tap.lock().unwrap().as_ref() {
+                tap(frame);
+            }
+        }
         if !self.open.load(Ordering::Relaxed) {
             return;
         }
         if let Some(route) = self.route.lock().unwrap().as_ref() {
             let _ = route.tx.send(StreamCmd::Feed(frame.to_vec()));
         }
+    }
+
+    /// Sets or removes the tap that gets a copy of every frame.
+    pub fn set_tap(&self, tap: Option<FrameTap>) {
+        let mut slot = self.tap.lock().unwrap();
+        self.tap_open.store(tap.is_some(), Ordering::Relaxed);
+        *slot = tap;
     }
 
     /// Whether a stream is pending or active.

@@ -9,7 +9,10 @@ use crate::managers::transcription::policy::{live_decode, LiveDecode, ModelTrait
 use crate::managers::transcription::StreamWorkKind;
 use crate::managers::transcription::{Transcription, TranscriptionManager};
 use crate::notices::{self, Notice, NoticeCode, NoticeSource};
-use crate::settings::{get_settings, AppSettings, OverlayStyle, APPLE_INTELLIGENCE_PROVIDER_ID};
+use crate::settings::{
+    get_settings, AppSettings, OverlayStyle, RemoteTranscriptionMode,
+    APPLE_INTELLIGENCE_PROVIDER_ID,
+};
 use crate::shortcut;
 use crate::tray::{set_tray_state, TrayIconState};
 use crate::utils::{
@@ -598,6 +601,11 @@ impl ShortcutAction for TranscribeAction {
         if !remote && live_decode(expected_model, settings.long_form_chunking) != LiveDecode::None {
             tm.start_stream();
         }
+        // Phrases sent to the server while recording show in the live overlay.
+        let remote_live = crate::remote_live::wanted(&settings);
+        if remote_live {
+            crate::remote_live::begin(app, settings.clone());
+        }
         let plan_elapsed = plan_started.elapsed();
 
         // Sizing the overlay follows the same advertised capability. A model that
@@ -605,7 +613,9 @@ impl ShortcutAction for TranscribeAction {
         // pill instead of an oversized transparent live window.
         let overlay_started = Instant::now();
         match settings.overlay_style {
-            OverlayStyle::Live if model_supports_streaming => utils::show_streaming_overlay(app),
+            OverlayStyle::Live if model_supports_streaming || remote_live => {
+                utils::show_streaming_overlay(app)
+            }
             OverlayStyle::Live | OverlayStyle::Minimal => show_recording_overlay(app),
             OverlayStyle::None => {} // show_overlay_state no-ops on None anyway
         }
@@ -685,6 +695,7 @@ impl ShortcutAction for TranscribeAction {
             // Starting failed (for example due to blocked microphone permissions).
             // Revert UI state so we don't stay stuck in the recording overlay.
             tm.cancel_stream();
+            crate::remote_live::cancel();
             set_tray_state(app, TrayIconState::Idle);
             if let Some(err) = recording_error {
                 notices::raise(
@@ -726,7 +737,10 @@ impl ShortcutAction for TranscribeAction {
         let style = get_settings(app).overlay_style;
         // Capture this before finalizing the stream so every later working state
         // targets the same overlay that was shown for this transcription.
-        let use_streaming_overlay = should_use_streaming_overlay(style, tm.is_streaming());
+        let use_streaming_overlay = should_use_streaming_overlay(
+            style,
+            tm.is_streaming() || crate::remote_live::is_active(),
+        );
         if use_streaming_overlay {
             tm.emit_stream_working(StreamWorkKind::Transcribing);
         } else {
@@ -745,6 +759,14 @@ impl ShortcutAction for TranscribeAction {
 
         tauri::async_runtime::spawn(async move {
             let _guard = FinishGuard(ah.clone(), Arc::clone(&tm));
+            // Taken now, so any way this ends drops (and so stops) it.
+            let live = crate::remote_live::take();
+            // In typing mode the text is already in the app, so it can't be
+            // post-processed.
+            let typing = live
+                .as_ref()
+                .is_some_and(|l| l.mode() == RemoteTranscriptionMode::Type);
+            let post_process = post_process && !typing;
             debug!(
                 "Starting async transcription task for binding: {}",
                 binding_id
@@ -792,10 +814,19 @@ impl ShortcutAction for TranscribeAction {
                     // as an error, so it never starts a batch run.
                     let transcription_time = Instant::now();
                     let settings = get_settings(&ah);
-                    let transcription_result =
-                        if crate::remote_transcription::enabled(&settings) && !tm.is_streaming() {
+                    // In typing mode, the end of the text that isn't typed yet.
+                    let mut live_part: Option<String> = None;
+                    let transcription_result = match live {
+                        Some(live) if typing => {
+                            let finish =
+                                tauri::async_runtime::spawn_blocking(move || live.finish());
                             let Some(result) = complete_unless_cancelled(
-                                crate::remote_transcription::transcribe(&settings, &samples),
+                                async {
+                                    finish
+                                        .await
+                                        .map_err(|e| anyhow::anyhow!("{e}"))
+                                        .and_then(|r| r)
+                                },
                                 || rm.was_cancelled_since(cancel_generation),
                             )
                             .await
@@ -805,13 +836,44 @@ impl ShortcutAction for TranscribeAction {
                                 set_tray_state(&ah, TrayIconState::Idle);
                                 return;
                             };
-                            result.map(|text| Transcription {
-                                text,
-                                language: None,
+                            result.map(|finished| {
+                                live_part = Some(finished.last_part);
+                                Transcription {
+                                    text: crate::audio_toolkit::chunking::join_transcripts(
+                                        &finished.phrases,
+                                    ),
+                                    language: None,
+                                }
                             })
-                        } else {
-                            tm.transcribe_recording(samples)
-                        };
+                        }
+                        // In preview mode the phrases were only a preview: the
+                        // whole recording is sent below, for its full context.
+                        live => {
+                            drop(live);
+                            if crate::remote_transcription::enabled(&settings) && !tm.is_streaming()
+                            {
+                                let Some(result) = complete_unless_cancelled(
+                                    crate::remote_transcription::transcribe(&settings, &samples),
+                                    || rm.was_cancelled_since(cancel_generation),
+                                )
+                                .await
+                                else {
+                                    debug!(
+                                        "Transcription operation cancelled while the server worked"
+                                    );
+                                    utils::hide_recording_overlay(&ah);
+                                    set_tray_state(&ah, TrayIconState::Idle);
+                                    return;
+                                };
+                                result.map(|text| Transcription {
+                                    text,
+                                    language: None,
+                                })
+                            } else {
+                                tm.transcribe_recording(samples)
+                            }
+                        }
+                    };
 
                     // Await WAV save and verify
                     let wav_saved = match wav_handle.await {
@@ -881,6 +943,9 @@ impl ShortcutAction for TranscribeAction {
                                 return;
                             }
 
+                            // Some of it was typed while recording.
+                            let typed_live = live_part.is_some() && !transcription.is_empty();
+
                             // Save to history if WAV was saved
                             if wav_saved {
                                 if let Err(err) = hm.save_entry(
@@ -898,7 +963,10 @@ impl ShortcutAction for TranscribeAction {
                             // The user's hook only changes what gets pasted;
                             // history above keeps the text as produced.
                             let Some(final_text) = complete_unless_cancelled(
-                                crate::transcription_hook::apply(&ah, processed.final_text),
+                                crate::transcription_hook::apply(
+                                    &ah,
+                                    live_part.clone().unwrap_or(processed.final_text),
+                                ),
                                 || rm.was_cancelled_since(cancel_generation),
                             )
                             .await
@@ -909,7 +977,18 @@ impl ShortcutAction for TranscribeAction {
                                 return;
                             };
 
-                            if final_text.is_empty() {
+                            if final_text.is_empty() && typed_live {
+                                // Everything was typed while recording.
+                                notices::clear(&ah, NoticeSource::Dictation);
+                                utils::hide_recording_overlay(&ah);
+                                set_tray_state(&ah, TrayIconState::Idle);
+                                emit_transcription_complete(
+                                    &ah,
+                                    TranscriptionOutcome::Typed,
+                                    sample_count,
+                                    stop_time,
+                                );
+                            } else if final_text.is_empty() {
                                 finish_without_text(&ah, input_silent, sample_count, stop_time);
                             } else {
                                 let ah_clone = ah.clone();

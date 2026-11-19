@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { commands } from "@/bindings";
+import { commands, type RemoteTranscriptionMode } from "@/bindings";
 import { useSettings } from "../../hooks/useSettings";
 import { Button } from "../ui/Button";
+import { Dropdown } from "../ui/Dropdown";
 import { Input } from "../ui/Input";
 import { SettingContainer } from "../ui/SettingContainer";
 import { ToggleSwitch } from "../ui/ToggleSwitch";
@@ -30,6 +31,23 @@ export const RemoteTranscription: React.FC<RemoteTranscriptionProps> = ({
   const enabled = getSetting("remote_transcription_enabled") ?? false;
   const url = getSetting("remote_transcription_url") ?? "";
   const token = getSetting("remote_transcription_token") ?? "";
+  const mode = (getSetting("remote_transcription_mode") ??
+    "whole") as RemoteTranscriptionMode;
+
+  const modeOptions = [
+    {
+      value: "whole",
+      label: t("settings.advanced.remoteTranscription.mode.options.whole"),
+    },
+    {
+      value: "preview",
+      label: t("settings.advanced.remoteTranscription.mode.options.preview"),
+    },
+    {
+      value: "type",
+      label: t("settings.advanced.remoteTranscription.mode.options.type"),
+    },
+  ];
 
   const [urlText, setUrlText] = useState(url);
   const [tokenText, setTokenText] = useState(token);
@@ -132,6 +150,26 @@ export const RemoteTranscription: React.FC<RemoteTranscriptionProps> = ({
               variant="compact"
               className="w-full font-mono"
               autoComplete="off"
+            />
+          </SettingContainer>
+          <SettingContainer
+            title={t("settings.advanced.remoteTranscription.mode.title")}
+            description={t(
+              "settings.advanced.remoteTranscription.mode.description",
+            )}
+            descriptionMode={descriptionMode}
+            grouped={grouped}
+          >
+            <Dropdown
+              options={modeOptions}
+              selectedValue={mode}
+              onSelect={(value) =>
+                updateSetting(
+                  "remote_transcription_mode",
+                  value as RemoteTranscriptionMode,
+                )
+              }
+              disabled={isUpdating("remote_transcription_mode")}
             />
           </SettingContainer>
           <SettingContainer

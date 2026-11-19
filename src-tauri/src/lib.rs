@@ -23,6 +23,7 @@ mod paste_tx;
 pub mod portable;
 #[cfg(target_os = "linux")]
 mod primary_selection;
+mod remote_live;
 mod remote_transcription;
 mod secure_input;
 mod settings;
@@ -726,10 +727,12 @@ pub fn run(cli_args: CliArgs) {
             transcription_server::get_transcription_server_status,
             transcription_server::change_transcription_server_enabled_setting,
             transcription_server::change_transcription_server_port_setting,
+            transcription_server::change_transcription_server_token_setting,
             transcription_server::regenerate_transcription_server_token,
             remote_transcription::change_remote_transcription_enabled_setting,
             remote_transcription::change_remote_transcription_url_setting,
             remote_transcription::change_remote_transcription_token_setting,
+            remote_transcription::change_remote_transcription_mode_setting,
             remote_transcription::test_remote_transcription,
             shortcut::change_post_process_base_url_setting,
             shortcut::change_post_process_api_format_setting,

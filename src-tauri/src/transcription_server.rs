@@ -35,7 +35,9 @@ use tauri::{AppHandle, Manager};
 use tokio::net::TcpSocket;
 use tokio::sync::oneshot;
 
-use crate::audio_toolkit::decode_audio_file;
+use crate::audio_toolkit::{decode_audio_file, save_wav_file, verify_wav_file};
+use crate::language_detection::LanguageDecision;
+use crate::managers::history::HistoryManager;
 use crate::managers::transcription::{panic_payload_message, ChunkControl, TranscriptionManager};
 use crate::settings::{self, ServerToken};
 
@@ -252,6 +254,38 @@ pub async fn change_transcription_server_port_setting(
     Ok(())
 }
 
+/// Sets a token the user chose, such as one their clients already use. It's
+/// sent in an HTTP header, so it has to be printable ASCII with no spaces.
+#[tauri::command]
+#[specta::specta]
+pub fn change_transcription_server_token_setting(
+    app: AppHandle,
+    token: String,
+) -> Result<(), String> {
+    let token = check_custom_token(&token)?;
+    let mut settings = settings::get_settings(&app);
+    settings.transcription_server_token = ServerToken(token);
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+const MIN_TOKEN_CHARS: usize = 8;
+
+fn check_custom_token(token: &str) -> Result<String, String> {
+    let token = token.trim();
+    if token.chars().count() < MIN_TOKEN_CHARS {
+        return Err(format!(
+            "The token needs at least {MIN_TOKEN_CHARS} characters"
+        ));
+    }
+    if !token.chars().all(|c| c.is_ascii_graphic()) {
+        return Err(
+            "The token can only have letters, digits and symbols, with no spaces".to_string(),
+        );
+    }
+    Ok(token.to_string())
+}
+
 /// Replaces the token. Clients using the old one stop working at once.
 #[tauri::command]
 #[specta::specta]
@@ -437,6 +471,8 @@ fn transcribe_upload(app: &AppHandle, name: &str, data: Vec<u8>) -> Result<Trans
         duration_secs
     );
 
+    let recording = save_recording(app, &samples);
+
     let tm = Arc::clone(&app.state::<Arc<TranscriptionManager>>());
     let hold = tm.hold_for_server_request();
     let control = WaitForDictation { app };
@@ -451,29 +487,90 @@ fn transcribe_upload(app: &AppHandle, name: &str, data: Vec<u8>) -> Result<Trans
     }
 
     match result {
-        Ok(Ok(Some(t))) => Ok(Transcribed {
-            text: t.text,
-            language: t.language.and_then(|decision| decision.language),
-            duration_secs,
-        }),
-        Ok(Ok(None)) => Err(ApiError::new(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "The transcription was stopped",
-        )),
+        Ok(Ok(Some(t))) => {
+            save_history_entry(app, recording, t.text.clone(), t.language.clone());
+            Ok(Transcribed {
+                text: t.text,
+                language: t.language.and_then(|decision| decision.language),
+                duration_secs,
+            })
+        }
+        Ok(Ok(None)) => {
+            // Stopped, like a cancelled dictation: nothing goes to history.
+            if let Some(file_name) = recording {
+                let path = app
+                    .state::<Arc<HistoryManager>>()
+                    .get_audio_file_path(&file_name);
+                if let Err(e) = std::fs::remove_file(&path) {
+                    warn!("Can't remove the stopped request's recording: {}", e);
+                }
+            }
+            Err(ApiError::new(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "The transcription was stopped",
+            ))
+        }
         Ok(Err(e)) => {
             warn!("Transcription server request failed: {}", e);
+            // Kept with empty text, like a failed dictation, so it can be retried.
+            save_history_entry(app, recording, String::new(), None);
             Err(ApiError::new(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 e.to_string(),
             ))
         }
-        Err(payload) => Err(ApiError::new(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!(
-                "Transcription crashed: {}",
-                panic_payload_message(payload.as_ref())
-            ),
-        )),
+        Err(payload) => {
+            save_history_entry(app, recording, String::new(), None);
+            Err(ApiError::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!(
+                    "Transcription crashed: {}",
+                    panic_payload_message(payload.as_ref())
+                ),
+            ))
+        }
+    }
+}
+
+/// Saves a request's audio to the recordings folder, as a dictation's is,
+/// and returns its file name. History is only a record, so a failure here is
+/// logged and the request goes on.
+fn save_recording(app: &AppHandle, samples: &[f32]) -> Option<String> {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+
+    let hm = app.state::<Arc<HistoryManager>>();
+    // Milliseconds and a counter, so a request never takes the name of a
+    // dictation saved in the same second.
+    let file_name = format!(
+        "handy-server-{}-{}.wav",
+        chrono::Utc::now().timestamp_millis(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    );
+    let path = hm.recordings_dir().join(&file_name);
+    match save_wav_file(&path, samples).and_then(|()| verify_wav_file(&path, samples.len())) {
+        Ok(()) => Some(file_name),
+        Err(e) => {
+            error!("Can't save the request's recording for history: {}", e);
+            let _ = std::fs::remove_file(&path);
+            None
+        }
+    }
+}
+
+/// Adds the request to history, the same way a dictation is added. Without a
+/// saved recording there's nothing to add.
+fn save_history_entry(
+    app: &AppHandle,
+    recording: Option<String>,
+    text: String,
+    language: Option<LanguageDecision>,
+) {
+    let Some(file_name) = recording else {
+        return;
+    };
+    let hm = app.state::<Arc<HistoryManager>>();
+    if let Err(e) = hm.save_entry(file_name, text, false, None, None, language) {
+        error!("Failed to save the request to history: {}", e);
     }
 }
 
@@ -544,6 +641,14 @@ impl ChunkControl for WaitForDictation<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn custom_token_rules() {
+        assert_eq!(check_custom_token("  abc12345 ").unwrap(), "abc12345");
+        assert!(check_custom_token("short").is_err());
+        assert!(check_custom_token("has a space").is_err());
+        assert!(check_custom_token("токен-12345").is_err());
+    }
 
     #[test]
     fn same_secret_compares_whole_values() {

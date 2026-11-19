@@ -233,6 +233,7 @@ pub fn cancel_current_operation(app: &AppHandle) {
     // already in progress
     let tm = app.state::<Arc<TranscriptionManager>>();
     tm.cancel_stream();
+    crate::remote_live::cancel();
     tm.cancel_transcription();
 
     // Update tray icon and hide overlay

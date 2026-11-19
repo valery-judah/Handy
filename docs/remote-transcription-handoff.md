@@ -38,6 +38,7 @@ Both sides are built into Handy, so one build can act as server or client:
 | ------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `src-tauri/src/transcription_server.rs`                                  | The server (axum): routes, token check, decoding the upload, transcribing it, its commands and tests                                                                                                                  |
 | `src-tauri/src/remote_transcription.rs`                                  | The client: WAV encoding, the HTTP request, readable errors, the guard against using this computer's own server, its commands and tests                                                                               |
+| `src-tauri/src/remote_live.rs`                                           | Live remote dictation: cuts the recording into phrases at pauses, sends each one, shows or types its text. Its tests include an ignored one that sends recordings to a real server (`HANDY_TEST_WAVS`).               |
 | `src-tauri/src/settings.rs`                                              | `transcription_server_enabled`, `_port` (8765), `_token`; `remote_transcription_enabled`, `_url`, `_token`; and `ServerToken`, a string that `Debug` prints as `[REDACTED]`                                           |
 | `src-tauri/src/actions.rs`                                               | Dictation. `TranscribeAction::start` (line 528 on) skips the local model and live streaming in remote mode. `TranscribeAction::stop` (line 796) sends the recording to the server, and a cancel stops waiting for it. |
 | `src-tauri/src/managers/transcription_jobs.rs`                           | History "transcribe again" and file transcription: line 319 sends the whole recording to the server in remote mode                                                                                                    |
@@ -94,8 +95,28 @@ With Remote Transcription on and a URL set:
   text goes through Handy's usual steps: history, optional LLM
   post-processing on this computer, the transcription hook, paste.
 - **No local model is loaded**, and recording starts even if none is
-  downloaded. Live preview text isn't available; the overlay shows the small
-  pill.
+  downloaded.
+- **Text Delivery** (`remote_transcription_mode`) picks how the text comes
+  back:
+  - **Whole Recording** (`whole`, the default): the recording is sent when it
+    stops, and its text is pasted. The overlay shows the small pill.
+  - **Live Preview** (`preview`): while recording, each phrase is sent at a
+    pause and its text shown in the live overlay. When the recording stops,
+    the whole recording is sent again, so the pasted text has the full
+    context.
+  - **Type As You Speak** (`type`): each phrase is typed into the focused
+    app as soon as its text comes back, without the trailing space or
+    auto-submit; the last phrase is pasted at the stop with them.
+    Post-processing is skipped, because the text is already typed. History
+    keeps the whole text and recording.
+- **Phrases** (`src-tauri/src/remote_live.rs`): the recorder's frames reach
+  the phrase sender through a tap on `StreamRouter`. With VAD on, frames
+  stop shortly after speech ends, so a 300 ms gap in frames is a pause (about
+  0.75 s of quiet in all). With VAD off, 0.7 s of quiet frames is a pause.
+  Phrases shorter than 1 s wait for the next pause; speech with no pause is
+  cut at 25 s. If the server fails once, the rest is sent together at the
+  stop. After a cancel, a phrase still coming back is neither shown nor
+  typed.
 - **Timeouts:** 5 s to connect, then 60 s plus the audio's length.
 - **Errors** show the existing "Transcription Failed" notice with a reason,
   such as "Can't reach the Handy server at ...". The recording stays in

@@ -276,6 +276,18 @@ async changeTranscriptionServerPortSetting(port: number) : Promise<Result<null, 
 }
 },
 /**
+ * Sets a token the user chose, such as one their clients already use. It's
+ * sent in an HTTP header, so it has to be printable ASCII with no spaces.
+ */
+async changeTranscriptionServerTokenSetting(token: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_transcription_server_token_setting", { token }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Replaces the token. Clients using the old one stop working at once.
  */
 async regenerateTranscriptionServerToken() : Promise<Result<null, string>> {
@@ -305,6 +317,14 @@ async changeRemoteTranscriptionUrlSetting(url: string) : Promise<Result<null, st
 async changeRemoteTranscriptionTokenSetting(token: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_remote_transcription_token_setting", { token }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeRemoteTranscriptionModeSetting(mode: RemoteTranscriptionMode) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_remote_transcription_mode_setting", { mode }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -1270,7 +1290,7 @@ remote_transcription_enabled?: boolean;
 /**
  * The server's base URL, such as `http://192.168.0.21:8765/v1`.
  */
-remote_transcription_url?: string; remote_transcription_token?: ServerToken }
+remote_transcription_url?: string; remote_transcription_token?: ServerToken; remote_transcription_mode?: RemoteTranscriptionMode }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AutoUnavailableReason = 
@@ -1514,6 +1534,25 @@ export type RecordingPhase =
 "cancelled"
 export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days_3" | "weeks_2" | "months_3"
 export type RecordingStateEvent = { phase: RecordingPhase }
+/**
+ * How a dictation sent to another Handy's server comes back.
+ */
+export type RemoteTranscriptionMode = 
+/**
+ * The whole recording is sent when it stops, and its text is pasted.
+ */
+"whole" | 
+/**
+ * Each phrase is sent at a pause and its text shown in the overlay;
+ * when the recording stops, the whole recording is sent again and that
+ * text is pasted.
+ */
+"preview" | 
+/**
+ * Each phrase is sent at a pause and its text typed into the app as
+ * soon as it comes back.
+ */
+"type"
 /**
  * A retired ONNX model found on disk.
  */
